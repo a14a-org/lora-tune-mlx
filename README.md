@@ -129,6 +129,51 @@ Test the fine-tuned model:
 python scripts/test_simple.py
 ```
 
+### Test Script Options
+
+The `test_simple.py` script supports several command-line options for different testing scenarios:
+
+```bash
+python scripts/test_simple.py [options]
+```
+
+Available options:
+- `--multi-step-test`: Run multi-step conversation tests with predefined scenarios
+- `--interactive`: Run interactive multi-step test with user input between steps
+- `--lights`: Run the lights control scenario specifically
+- `--weather`: Run the weather check scenario specifically
+- `--failure`: Include failure responses in scenarios (e.g., unresponsive lights)
+
+Example commands:
+```bash
+# Run basic single-step tests
+python scripts/test_simple.py
+
+# Run multi-step conversation tests
+python scripts/test_simple.py --multi-step-test
+
+# Run interactive light control test
+python scripts/test_simple.py --lights
+
+# Run interactive weather scenario with user input
+python scripts/test_simple.py --weather
+
+# Test error handling with failure responses
+python scripts/test_simple.py --lights --failure
+```
+
+The script will:
+1. Load the base model
+2. Apply LoRA layers
+3. Load the checkpoint from `lora_checkpoints/checkpoint-500.npz`
+4. Run the specified test scenario
+
+Test scenarios include:
+- Single-step commands (lights, temperature)
+- Multi-turn conversations
+- Error handling and recovery
+- Natural language responses with tool calls
+
 ## Model Architecture
 
 The project uses LoRA to fine-tune the Qwen2.5-7B model by adding low-rank adaptation layers to the attention components. Key configurations:
