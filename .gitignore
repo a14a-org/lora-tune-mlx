@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.env
+
+# Data directories
+data/raw_data/
+data/mlx_format_qwen*/
+data/v1.1/raw_data/
+data/v1.1/mlx_format_qwen*/
+
+# Model checkpoints and cache
+checkpoints/
+lora_checkpoints/
+*.npz
+.cache/
+*.safetensors
+*.bin
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+*.tmp
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/ 

@@ -1,0 +1,42 @@
+# Core ML dependencies
+mlx>=0.0.8  # Apple MLX framework
+mlx-lm>=0.0.3  # MLX language models
+transformers>=4.36.0  # For tokenizers and model loading
+huggingface-hub>=0.20.1  # For model downloading
+safetensors>=0.4.1  # For loading model weights
+
+# Data processing
+numpy>=1.24.0
+tqdm>=4.66.0  # For progress bars
+
+# Development tools
+pytest>=7.4.0  # For testing
+black>=23.12.0  # For code formatting
+isort>=5.13.0  # For import sorting
+mypy>=1.8.0  # For type checking
+
+# Monitoring
+py-spy>=0.3.14  # For profiling
+psutil>=5.9.0  # For system monitoring
+
+# File handling
+pathlib>=1.0.1  # For path manipulation
+
+# API and Tools
+fastapi
+uvicorn
+requests
+pyyaml
+
+# Monitoring and profiling
+torch-tb-profiler
+
+# Development
+python-dotenv
+
+# Documentation
+mkdocs
+mkdocs-material
+
+# Additional dependencies
+openai>=1.0.0 

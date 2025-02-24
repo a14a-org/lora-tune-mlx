@@ -1,0 +1,29 @@
+{
+    "model_name": "mlx-community/Qwen2.5-7B-Instruct-bf16",
+    "lora_config": {
+        "r": 16,
+        "alpha": 32,
+        "dropout": 0.1,
+        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+        "task_type": "CAUSAL_LM"
+    },
+    "training_config": {
+        "num_epochs": 3,
+        "max_steps": 500,
+        "learning_rate": 2e-4,
+        "warmup_steps": 500,
+        "batch_size": 8,
+        "gradient_accumulation_steps": 8,
+        "weight_decay": 0.01,
+        "max_grad_norm": 0.3,
+        "logging_steps": 10,
+        "save_steps": 100,
+        "eval_steps": 20
+    },
+    "data_config": {
+        "train_file": "data/mlx_format_qwen/train.jsonl",
+        "validation_file": "data/mlx_format_qwen/valid.jsonl",
+        "max_seq_length": 2048,
+        "preprocessing_num_workers": 4
+    }
+} 
