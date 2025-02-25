@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from mlx_lm import load, generate
 import mlx.core as mx
 from models import LoRALinear
@@ -66,7 +70,7 @@ for layer in layers:
 
 # Load LoRA weights
 print("\nLoading LoRA weights...")
-checkpoint_path = Path("lora_checkpoints/checkpoint-500.npz")
+checkpoint_path = Path("lora_checkpoints/checkpoint-2000.npz")
 if checkpoint_path.exists():
     print(f"Found checkpoint at {checkpoint_path}")
     lora_state = mx.load(str(checkpoint_path))
@@ -89,114 +93,89 @@ else:
 def get_enhanced_system_prompt():
     """Get the enhanced system prompt with tool definitions and examples."""
     return """<|im_start|>system
-[SYSTEM VERSION 1.3]
-You are a home automation assistant. You must use the exact tool call format shown in the examples below.
+You are a powerful agentic AI coding assistant. You help users with coding tasks using the following tools:
 
-Available tools and usage examples:
-
-<tool_definition name='control_lights'>
-  description: Control smart lights in a room
+<tool_definition name='list_dir'>
+  description: Lists directory contents at a specified path relative to the workspace
   parameters:
-    - room (string): The room where the lights are located
-    - action (string, values: ['on', 'off', 'dim']): The action to perform on the lights
-    - brightness (integer, optional): Brightness level (0-100), required for dim action
+    - relative_workspace_path (string, required): Path to list contents of
   format_rules:
     - Tool calls must use XML-style tags
     - Parameters must be space-separated key=value pairs
     - String values must be quoted
-  examples:
-    - User: Turn on the living room lights
-      Assistant: I'll help you with that.
-      <tool name='control_lights'>room="living room" action="on"</tool>
-      System: <tool_response name='control_lights'>{"status":"success","message":"Lights turned on"}</tool_response>
-      Assistant: The living room lights have been turned on.
 </tool_definition>
 
-<tool_definition name='get_weather'>
-  description: Get current weather for a location
+<tool_definition name='read_file'>
+  description: Reads file contents, with support for both full file and partial reading
   parameters:
-    - location (string): The city or location to get weather for
+    - relative_workspace_path (string, required): Path to the file
+    - should_read_entire_file (boolean, required): Whether to read entire file
+    - start_line_one_indexed (integer, required): Start line (1-based)
+    - end_line_one_indexed_inclusive (integer, required): End line (1-based)
   format_rules:
     - Tool calls must use XML-style tags
     - Parameters must be space-separated key=value pairs
     - String values must be quoted
-  examples:
-    - User: What's the weather in Amsterdam?
-      Assistant: I'll check the weather in Amsterdam for you.
-      <tool name='get_weather'>location="Amsterdam"</tool>
-      System: <tool_response name='get_weather'>{"temperature":18,"conditions":"sunny"}</tool_response>
-      Assistant: In Amsterdam, it's currently 18°C and sunny.
 </tool_definition>
 
-<tool_definition name='set_thermostat'>
-  description: Set thermostat temperature
+<tool_definition name='edit_file'>
+  description: Makes code changes to specified files based on instructions
   parameters:
-    - temperature (number): The target temperature
-    - unit (string, optional, values: ['C', 'F']): Temperature unit (Celsius or Fahrenheit)
+    - target_file (string, required): File to edit
+    - instructions (string, required): What changes to make
+    - code_edit (string, required): The actual edit content
   format_rules:
     - Tool calls must use XML-style tags
     - Parameters must be space-separated key=value pairs
     - String values must be quoted
-  examples:
-    - User: Set the temperature to 22 degrees Celsius
-      Assistant: I'll set the thermostat to 22°C.
-      <tool name='set_thermostat'>temperature=22 unit="C"</tool>
-      System: <tool_response name='set_thermostat'>{"status":"success","set_temp":22,"unit":"C"}</tool_response>
-      Assistant: The thermostat has been set to 22°C.
 </tool_definition>
 
-<tool_definition name='set_thermostat_delta'>
-  description: Adjust temperature relative to current setting
+<tool_definition name='run_terminal_cmd'>
+  description: Executes terminal commands with configurable execution options
   parameters:
-    - delta (number): The temperature change (+/- degrees)
+    - command (string, required): Command to execute
+    - is_background (boolean, required): Whether to run in background
+    - require_user_approval (boolean, required): Whether user must approve
   format_rules:
     - Tool calls must use XML-style tags
     - Parameters must be space-separated key=value pairs
     - String values must be quoted
-  examples:
-    - User: Make it 2 degrees warmer
-      Assistant: I'll increase the temperature by 2 degrees.
-      <tool name='set_thermostat_delta'>delta=2</tool>
-      System: <tool_response name='set_thermostat_delta'>{"status":"success","delta":2,"new_temp":24}</tool_response>
-      Assistant: I've increased the temperature by 2 degrees.
 </tool_definition>
 
 Example multi-turn conversations:
 
-1. Light control with feedback:
-User: Can you turn on the kitchen lights?
-Assistant: I'll help you turn on the kitchen lights.
-<tool name='control_lights'>room="kitchen" action="on"</tool>
-System: <tool_response name='control_lights'>{"status":"success"}</tool_response>
-Assistant: The kitchen lights have been turned on successfully.
+1. File creation and editing:
+User: Can you create a new Python script that prints "Hello, World!"?
+Assistant: I'll help you create a new Python script.
+<tool name='edit_file'>target_file="hello.py" instructions="Create a new Python script" code_edit="#!/usr/bin/env python3\n\nprint('Hello, World!')"</tool>
+System: <tool_response name='edit_file'>{"status":"success","message":"File created successfully"}</tool_response>
+Assistant: I've created hello.py with a simple Hello World program. Would you like me to run it?
 
-2. Weather and temperature adjustment:
-User: What's the weather like in London?
-Assistant: I'll check the weather in London for you.
-<tool name='get_weather'>location="London"</tool>
-System: <tool_response name='get_weather'>{"temperature":15,"conditions":"cloudy"}</tool_response>
-Assistant: In London, it's currently 15°C and cloudy. Would you like me to adjust the thermostat to match the outdoor temperature?
-User: Yes, please set it to 20 degrees
-Assistant: I'll set the thermostat to 20°C for you.
-<tool name='set_thermostat'>temperature=20 unit="C"</tool>
-System: <tool_response name='set_thermostat'>{"status":"success","set_temp":20}</tool_response>
-Assistant: I've set the thermostat to 20°C for your comfort.
+2. File reading and modification:
+User: What's in the requirements.txt file?
+Assistant: I'll check the contents of requirements.txt for you.
+<tool name='read_file'>relative_workspace_path="requirements.txt" should_read_entire_file=true start_line_one_indexed=1 end_line_one_indexed_inclusive=100</tool>
+System: <tool_response name='read_file'>{"content":"numpy>=1.24.0\npandas>=2.0.0"}</tool_response>
+Assistant: The requirements.txt file contains two dependencies:
+1. numpy (version >= 1.24.0)
+2. pandas (version >= 2.0.0)
+Would you like me to add any other dependencies?
 <|im_end|>"""
 
 # Test prompts
 test_prompts = [
     get_enhanced_system_prompt() + """<|im_start|>user
-Can you turn on the lights in the living room?
+Can you check what files are in the current directory?
 <|im_end|>
 <|im_start|>assistant
 """,
     get_enhanced_system_prompt() + """<|im_start|>user
-What's the current temperature in the house?
+Create a new file called test.py with a simple unit test example.
 <|im_end|>
 <|im_start|>assistant
 """,
     get_enhanced_system_prompt() + """<|im_start|>user
-Can you check the weather in Amsterdam?
+What's in the requirements.txt file?
 <|im_end|>
 <|im_start|>assistant
 """
@@ -206,39 +185,49 @@ def get_multi_step_prompts():
     """Get prompts for multi-step conversation testing with tool responses."""
     base_prompt = get_enhanced_system_prompt()
     
-    weather_temp_convo = base_prompt + """<|im_start|>user
-What's the weather like in London?
+    file_creation_convo = base_prompt + """<|im_start|>user
+Can you create a new Python script that calculates fibonacci numbers?
 <|im_end|>
 <|im_start|>assistant
-I'll check the weather in London for you.
-<tool name='get_weather'>location="London"</tool>
+I'll help you create a Python script for calculating Fibonacci numbers.
+<tool name='edit_file'>target_file="fibonacci.py" instructions="Create a new Python script for Fibonacci calculation" code_edit="def fibonacci(n):
+    if n <= 1:
+        return n
+    return fibonacci(n-1) + fibonacci(n-2)
+
+def main():
+    n = 10
+    print(f'Fibonacci({n}) = {fibonacci(n)}')
+
+if __name__ == '__main__':
+    main()"</tool>
 <|im_end|>
 <|im_start|>system
-<tool_response name='get_weather'>{"temperature":15,"conditions":"cloudy"}</tool_response>
-<|im_end|>
-<|im_start|>assistant
-In London, it's currently 15°C and cloudy. Would you like me to adjust the thermostat to match the outdoor temperature?
+<tool_response name='edit_file'>{"status":"success","message":"File created successfully"}</tool_response>
 <|im_end|>
 <|im_start|>user
-Yes, please set it to 20 degrees
+Can you add a docstring to explain the function?
 <|im_end|>
 <|im_start|>assistant
 """
 
-    lights_feedback_convo = base_prompt + """<|im_start|>user
-Can you turn on the kitchen lights?
+    project_setup_convo = base_prompt + """<|im_start|>user
+Can you help me set up a new Python project with proper structure?
 <|im_end|>
 <|im_start|>assistant
-I'll help you turn on the kitchen lights.
-<tool name='control_lights'>room="kitchen" action="on"</tool>
+I'll help you create a proper Python project structure. First, let's create the necessary directories.
+<tool name='run_terminal_cmd'>command="mkdir -p src tests docs" is_background=false require_user_approval=true</tool>
 <|im_end|>
 <|im_start|>system
-<tool_response name='control_lights'>{"status":"error","message":"Kitchen lights not responding"}</tool_response>
+<tool_response name='run_terminal_cmd'>{"status":"success","stdout":"","stderr":""}</tool_response>
+<|im_end|>
+<|im_start|>user
+Great! Can you create a basic setup.py file?
 <|im_end|>
 <|im_start|>assistant
 """
 
-    return [weather_temp_convo, lights_feedback_convo]
+    return [file_creation_convo, project_setup_convo]
 
 def run_single_step_tests(model, tokenizer):
     """Run the original single-step test cases."""
@@ -266,8 +255,8 @@ def run_multi_step_tests(model, tokenizer):
 
     multi_step_prompts = get_multi_step_prompts()
     scenarios = [
-        "Weather query with temperature adjustment suggestion",
-        "Light control with error handling"
+        "File creation and editing",
+        "Project setup"
     ]
 
     for i, (prompt, scenario) in enumerate(zip(multi_step_prompts, scenarios)):
@@ -313,23 +302,23 @@ def run_interactive_multi_step_test(model, tokenizer, scenario, include_failure=
     
     base_prompt = get_enhanced_system_prompt()
     
-    if scenario == "lights":
-        # Lights scenario
+    if scenario == "file_creation":
+        # File creation scenario
         initial_prompt = base_prompt + """<|im_start|>user
-Can you turn on the kitchen lights?
+Can you create a new Python script that calculates fibonacci numbers?
 <|im_end|>
 <|im_start|>assistant
 """
-        tool_response = '<tool_response name="control_lights">{"status":"error","message":"Kitchen lights not responding"}</tool_response>' if include_failure else '<tool_response name="control_lights">{"status":"success","message":"Lights turned on"}</tool_response>'
+        tool_response = '<tool_response name="edit_file">{"status":"success","message":"File created successfully"}</tool_response>' if include_failure else '<tool_response name="edit_file">{"status":"success","message":"File created successfully"}</tool_response>'
         
-    elif scenario == "weather":
-        # Weather scenario
+    elif scenario == "project_setup":
+        # Project setup scenario
         initial_prompt = base_prompt + """<|im_start|>user
-What's the weather like in Amsterdam?
+Can you help me set up a new Python project with proper structure?
 <|im_end|>
 <|im_start|>assistant
 """
-        tool_response = '<tool_response name="get_weather">{"temperature":15,"conditions":"cloudy"}</tool_response>'
+        tool_response = '<tool_response name="run_terminal_cmd">{"status":"success","stdout":"","stderr":""}</tool_response>'
     
     # Step 1: Initial user request
     print("\nStep 1: Initial user request")
@@ -365,22 +354,22 @@ What's the weather like in Amsterdam?
     response2 = generate(model, tokenizer, prompt=extended_prompt, verbose=True)
     print(f"\nResponse: {response2}")
     
-    if scenario == "weather":
-        # Add temperature adjustment step for weather scenario
-        input("\nPress Enter to continue with temperature adjustment...")
+    if scenario == "project_setup":
+        # Add project setup step for project setup scenario
+        input("\nPress Enter to continue with project setup...")
         
         extended_prompt += response2 + """
 <|im_end|>
 <|im_start|>user
-Yes, please set it to 20 degrees
+Great! Can you create a basic setup.py file?
 <|im_end|>
 <|im_start|>assistant
 """
         
-        print("\nStep 3: User requests temperature adjustment")
+        print("\nStep 3: User requests project setup")
         print("-" * 40)
         print("\n👤 User:")
-        print("Yes, please set it to 20 degrees")
+        print("Great! Can you create a basic setup.py file?")
         
         print("\n🤖 Assistant (Generating response...):")
         response3 = generate(model, tokenizer, prompt=extended_prompt, verbose=True)
@@ -392,8 +381,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run model inference tests')
     parser.add_argument('--multi-step-test', action='store_true', help='Run multi-step conversation tests')
     parser.add_argument('--interactive', action='store_true', help='Run interactive multi-step test')
-    parser.add_argument('--lights', action='store_true', help='Run lights control scenario')
-    parser.add_argument('--weather', action='store_true', help='Run weather check scenario')
+    parser.add_argument('--file-creation', action='store_true', help='Run file creation scenario')
+    parser.add_argument('--project-setup', action='store_true', help='Run project setup scenario')
     parser.add_argument('--failure', action='store_true', help='Include failure responses in scenarios')
     args = parser.parse_args()
 
@@ -455,7 +444,7 @@ def main():
 
     # Load LoRA weights (existing code)
     print("\nLoading LoRA weights...")
-    checkpoint_path = Path("lora_checkpoints/checkpoint-500.npz")
+    checkpoint_path = Path("lora_checkpoints/checkpoint-2000.npz")
     if checkpoint_path.exists():
         print(f"Found checkpoint at {checkpoint_path}")
         lora_state = mx.load(str(checkpoint_path))
@@ -475,13 +464,13 @@ def main():
         print("No LoRA weights found at", checkpoint_path)
 
     # Run tests based on command line arguments
-    if args.lights:
-        run_interactive_multi_step_test(model, tokenizer, "lights", args.failure)
-    if args.weather:
-        run_interactive_multi_step_test(model, tokenizer, "weather", args.failure)
-    if not (args.lights or args.weather):  # Default behavior
+    if args.file_creation:
+        run_interactive_multi_step_test(model, tokenizer, "file_creation", args.failure)
+    if args.project_setup:
+        run_interactive_multi_step_test(model, tokenizer, "project_setup", args.failure)
+    if not (args.file_creation or args.project_setup):  # Default behavior
         if args.interactive:
-            run_interactive_multi_step_test(model, tokenizer, "lights", args.failure)
+            run_interactive_multi_step_test(model, tokenizer, "file_creation", args.failure)
         elif args.multi_step_test:
             run_multi_step_tests(model, tokenizer)
         else:

@@ -1,0 +1,11 @@
+{
+  "total_examples": 2000,
+  "successful_conversions": 2000,
+  "failed_conversions": 0,
+  "tool_usage": {
+    "control_lights": 600,
+    "set_thermostat_delta": 400,
+    "get_weather": 600,
+    "set_thermostat": 400
+  }
+}

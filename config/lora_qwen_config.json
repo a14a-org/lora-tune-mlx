@@ -9,20 +9,20 @@
     },
     "training_config": {
         "num_epochs": 3,
-        "max_steps": 500,
+        "max_steps": 2000,
         "learning_rate": 2e-4,
-        "warmup_steps": 500,
+        "warmup_steps": 200,
         "batch_size": 8,
         "gradient_accumulation_steps": 8,
         "weight_decay": 0.01,
         "max_grad_norm": 0.3,
         "logging_steps": 10,
         "save_steps": 100,
-        "eval_steps": 20
+        "eval_steps": 50
     },
     "data_config": {
-        "train_file": "data/mlx_format_qwen/train.jsonl",
-        "validation_file": "data/mlx_format_qwen/valid.jsonl",
+        "train_file": "data/qwen_format_v2/train_20250224_224955.jsonl",
+        "validation_file": "data/qwen_format_v2/valid_20250224_224955.jsonl",
         "max_seq_length": 2048,
         "preprocessing_num_workers": 4
     }

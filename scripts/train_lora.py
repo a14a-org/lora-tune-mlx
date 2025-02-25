@@ -8,8 +8,16 @@ import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
-import utils as lora_utils
 from mlx.utils import tree_flatten
+from mlx_lm import load
+from mlx_lm.models.base import scaled_dot_product_attention
+
+# Fix the import path
+import sys
+sys.path.append('.')  # Add project root to Python path
+from utils import *  # Import utils module
+
+import utils as lora_utils
 from models import LoRALinear
 from mlx_lm import load
 from mlx_lm.models.base import scaled_dot_product_attention
@@ -203,6 +211,15 @@ def train(model, train_set, val_set, tokenizer, config, output_dir, trainable_pa
             
             train_loss = np.sum(train_losses) / ntokens
             print(f"Step {step}: Train loss: {train_loss:.4f}")
+            
+            # Save checkpoint at step 100
+            if step == 100:
+                print("\nReached step 100, saving checkpoint...")
+                model.eval()
+                val_loss = evaluate(model, val_set, compute_loss, tokenizer, config)
+                print(f"Validation loss at step 100: {val_loss:.4f}")
+                save_checkpoint(model, optimizer, step, val_loss, output_dir)
+                model.train()
             
             if step >= max_steps:  # Check if we've reached max_steps
                 print(f"\nReached max_steps ({max_steps}), stopping training.")
