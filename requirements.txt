@@ -39,4 +39,5 @@ mkdocs
 mkdocs-material
 
 # Additional dependencies
-openai>=1.0.0 
+openai>=1.12.0
+tenacity>=8.2.3 

@@ -221,6 +221,15 @@ def train(model, train_set, val_set, tokenizer, config, output_dir, trainable_pa
                 save_checkpoint(model, optimizer, step, val_loss, output_dir)
                 model.train()
             
+            # Save checkpoint at regular intervals
+            if step > 0 and step % training_config["save_steps"] == 0:
+                print(f"\nReached save step {step}, saving checkpoint...")
+                model.eval()
+                val_loss = evaluate(model, val_set, compute_loss, tokenizer, config)
+                print(f"Validation loss at step {step}: {val_loss:.4f}")
+                save_checkpoint(model, optimizer, step, val_loss, output_dir)
+                model.train()
+            
             if step >= max_steps:  # Check if we've reached max_steps
                 print(f"\nReached max_steps ({max_steps}), stopping training.")
                 # Save final checkpoint
@@ -369,6 +378,52 @@ def save_checkpoint(model, optimizer, step, val_loss, output_dir):
         raise
 
 
+def load_dataset(tokenizer, config):
+    """Load and preprocess the dataset."""
+    train_data = []
+    valid_data = []
+    
+    # Load training data
+    with open(config["train_file"], "r") as f:
+        for line in f:
+            example = json.loads(line)
+            text = ""
+            for msg in example["messages"]:
+                # Add message start
+                text += f"<|im_start|>{msg['role']}\n"
+                
+                # Add message content, preserving tool calls and responses
+                content = msg["content"]
+                if "<tool_call>" in content:
+                    # Ensure tool calls are preserved exactly as is
+                    text += content
+                else:
+                    text += content
+                
+                # Add message end
+                text += "\n<|im_end|>\n"
+            
+            train_data.append(text)
+    
+    # Load validation data
+    with open(config["valid_file"], "r") as f:
+        for line in f:
+            example = json.loads(line)
+            text = ""
+            for msg in example["messages"]:
+                text += f"<|im_start|>{msg['role']}\n{msg['content']}\n<|im_end|>\n"
+            valid_data.append(text)
+    
+    # Tokenize the data
+    def tokenize(text):
+        return tokenizer(text, return_tensors="np", add_special_tokens=False)["input_ids"][0]
+    
+    train_tokens = [tokenize(text) for text in train_data]
+    valid_tokens = [tokenize(text) for text in valid_data]
+    
+    return train_tokens, valid_tokens
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train a model with LoRA")
     parser.add_argument("--config", type=str, required=True, help="Path to config file")
@@ -397,9 +452,10 @@ def main():
     print("Loading datasets")
     train_set, val_set = load_datasets(config)
     
-    # Create output directory
-    output_dir = Path("lora_checkpoints")
-    output_dir.mkdir(exist_ok=True)
+    # Create output directory from config
+    output_dir = Path(config["training_config"]["output_dir"])
+    output_dir.mkdir(exist_ok=True, parents=True)
+    print(f"Checkpoints will be saved to: {output_dir}")
     
     # Train the model
     print("Starting training")

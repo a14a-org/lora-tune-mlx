@@ -2,11 +2,17 @@
 import json
 import random
 import argparse
+import os
 from pathlib import Path
-from typing import Dict, List, Any, Union, Optional
+from typing import Dict, List, Any, Union, Optional, Tuple
 from datetime import datetime
 import logging
 from collections import defaultdict
+
+from generators.file_manipulation import FileManipulationGenerator
+from generators.realistic_scenarios import RealisticScenarioGenerator
+from data.utils.openai_variations import generate_message_variations, DEFAULT_MODEL
+# Import other generators as they are created
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -78,6 +84,129 @@ TOOLS = {
                 }
             },
             "required": ["delta"]
+        }
+    },
+    "codebase_search": {
+        "name": "codebase_search",
+        "description": "Find snippets of code from the codebase most relevant to the search query",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query to find relevant code"
+                },
+                "target_directories": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Glob patterns for directories to search over"
+                },
+                "explanation": {
+                    "type": "string",
+                    "description": "One sentence explanation as to why this tool is being used"
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    "read_file": {
+        "name": "read_file",
+        "description": "Read the contents of a file",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "relative_workspace_path": {
+                    "type": "string",
+                    "description": "The path of the file to read"
+                },
+                "start_line_one_indexed": {
+                    "type": "integer",
+                    "description": "The one-indexed line number to start reading from"
+                },
+                "end_line_one_indexed_inclusive": {
+                    "type": "integer",
+                    "description": "The one-indexed line number to end reading at"
+                },
+                "should_read_entire_file": {
+                    "type": "boolean",
+                    "description": "Whether to read the entire file"
+                },
+                "explanation": {
+                    "type": "string",
+                    "description": "One sentence explanation as to why this tool is being used"
+                }
+            },
+            "required": ["relative_workspace_path", "start_line_one_indexed", "end_line_one_indexed_inclusive", "should_read_entire_file"]
+        }
+    },
+    "edit_file": {
+        "name": "edit_file",
+        "description": "Edit or create a file",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target_file": {
+                    "type": "string",
+                    "description": "The path of the file to edit"
+                },
+                "instructions": {
+                    "type": "string",
+                    "description": "Instructions for the edit"
+                },
+                "code_edit": {
+                    "type": "string",
+                    "description": "The code changes to make"
+                }
+            },
+            "required": ["target_file", "instructions", "code_edit"]
+        }
+    },
+    "grep_search": {
+        "name": "grep_search",
+        "description": "Search for text patterns in files",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The regex pattern to search for"
+                },
+                "include_pattern": {
+                    "type": "string",
+                    "description": "Glob pattern for files to include"
+                },
+                "exclude_pattern": {
+                    "type": "string",
+                    "description": "Glob pattern for files to exclude"
+                },
+                "case_sensitive": {
+                    "type": "boolean",
+                    "description": "Whether the search should be case sensitive"
+                },
+                "explanation": {
+                    "type": "string",
+                    "description": "One sentence explanation as to why this tool is being used"
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    "file_search": {
+        "name": "file_search",
+        "description": "Search for files by name",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Fuzzy filename to search for"
+                },
+                "explanation": {
+                    "type": "string",
+                    "description": "One sentence explanation as to why this tool is being used"
+                }
+            },
+            "required": ["query", "explanation"]
         }
     }
 }
@@ -333,278 +462,251 @@ RESPONSE_TEMPLATES = {
     }
 }
 
-def generate_system_message() -> str:
-    """Generate the system message with tool definitions."""
-    system_msg = "You are a home automation assistant. You have access to the following tools:\n\n"
+# Cost estimation constants (based on OpenAI pricing as of 2024)
+MODEL_COSTS = {
+    "gpt-3.5-turbo-instruct": 0.0015,  # Cost per 1K tokens
+    "gpt-4-turbo-preview": 0.01,       # Cost per 1K input tokens
+    "gpt-4": 0.03,                     # Cost per 1K input tokens
+}
+
+# Token estimation constants
+TOKENS_PER_WORD = 1.3  # Average tokens per word
+MIN_TOKENS_PER_REQUEST = 50  # Minimum tokens per API request for prompt
+
+class CostTracker:
+    """Track API usage and estimate costs."""
     
-    for tool in TOOLS.values():
-        system_msg += f"{tool['name']}:\n"
-        system_msg += f"  Description: {tool['description']}\n"
-        system_msg += "  Parameters:\n"
+    def __init__(self, model: str = DEFAULT_MODEL):
+        self.model = model
+        self.total_tokens = 0
+        self.total_api_calls = 0
+        self.variations_generated = 0
         
-        for param_name, param_info in tool['parameters']['properties'].items():
-            required = "required" if param_name in tool['parameters'].get('required', []) else "optional"
-            param_type = param_info['type']
-            enum_values = f", values: {param_info['enum']}" if 'enum' in param_info else ""
-            param_desc = param_info.get('description', '')
-            system_msg += f"    * {param_name} ({param_type}, {required}{enum_values}): {param_desc}\n"
-        
-        system_msg += "\n"
+    def add_usage(self, tokens: int):
+        """Add token usage."""
+        # Add minimum prompt tokens plus estimated completion tokens
+        total_tokens = MIN_TOKENS_PER_REQUEST + tokens
+        self.total_tokens += total_tokens
+        self.total_api_calls += 1
+        self.variations_generated += 1
     
-    return system_msg
-
-def generate_tool_response(tool_name: str, params: Dict[str, Any], should_error: bool = False) -> Dict[str, Any]:
-    """Generate a response for a tool call, with potential errors."""
-    if should_error:
-        error_types = list(ERROR_TYPES[tool_name].keys())
-        error_type = random.choice(error_types)
-        error_template = ERROR_TYPES[tool_name][error_type]
-        error_response = {
-            "status": "error",
-            "error": {
-                "code": error_template["error"]["code"],
-                "message": error_template["error"]["message"].format(**params)
-            }
-        }
-        return error_response
-
-    if tool_name == "get_weather":
-        return {
-            "status": "success",
-            "data": {
-                "temperature": random.randint(-5, 35),
-                "unit": "C",
-                "conditions": random.choice(WEATHER_CONDITIONS["basic"] + WEATHER_CONDITIONS["detailed"])
-            }
-        }
-    elif tool_name == "control_lights":
-        return {
-            "status": "success",
-            "data": {
-                "room": params["room"],
-                "action": params["action"],
-                "brightness": params.get("brightness", 100 if params["action"] == "on" else 0)
-            }
-        }
-    elif tool_name == "set_thermostat":
-        return {
-            "status": "success",
-            "data": {
-                "temperature": params["temperature"]
-            }
-        }
-    elif tool_name == "set_thermostat_delta":
-        current_temp = random.randint(18, 25)
-        new_temp = current_temp + params["delta"]
-        return {
-            "status": "success",
-            "data": {
-                "previous_temperature": current_temp,
-                "temperature": new_temp,
-                "delta": params["delta"]
-            }
-        }
-
-def format_function_call(tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    """Format a function call in Qwen's expected format."""
-    return {
-        "name": tool_name,
-        "arguments": json.dumps(params, ensure_ascii=False)
-    }
-
-def get_natural_response(tool_name: str, params: Dict[str, Any], response_data: Dict[str, Any]) -> str:
-    """Get a natural language response based on the tool response."""
-    if response_data["status"] == "error":
-        error_code = response_data["error"]["code"]
-        error_type = error_code.lower()
-        templates = RESPONSE_TEMPLATES[tool_name]["error"][error_type]
-        return random.choice(templates).format(**params)
-
-    templates = RESPONSE_TEMPLATES[tool_name]["success"]
-    if tool_name == "control_lights":
-        templates = templates[params["action"]]
-    elif tool_name == "set_thermostat_delta":
-        templates = templates["increase" if params["delta"] > 0 else "decrease"]
-
-    return random.choice(templates).format(**{**params, **response_data["data"]})
-
-def generate_single_turn_example(tool_name: str, should_error: bool = False) -> Dict[str, Any]:
-    """Generate a single-turn conversation example."""
-    # Choose appropriate parameters based on tool
-    if tool_name == "get_weather":
-        location_list = (LOCATIONS["error_prone"] if should_error else 
-                        random.choice([LOCATIONS["popular"], LOCATIONS["us_cities"], 
-                                     LOCATIONS["european"], LOCATIONS["asian"]]))
-        params = {"location": random.choice(location_list)}
-        variations = QUERY_VARIATIONS["get_weather"]
-        
-        # Add weather-specific context
-        context_params = {
-            "time_context": random.choice(TIME_CONTEXTS),
-            "season": random.choice(SEASONS)
-        }
-        
-    elif tool_name == "control_lights":
-        room_list = ROOMS["error_prone"] if should_error else ROOMS["common"] + ROOMS["specific"]
-        action = random.choice(["on", "off", "dim"])
-        params = {
-            "room": random.choice(room_list),
-            "action": action
-        }
-        if action == "dim":
-            params["brightness"] = random.randint(1, 100)
-        variations = QUERY_VARIATIONS["control_lights"]
-        
-        # Add light-specific context
-        context_params = {
-            "time_context": random.choice(TIME_CONTEXTS)
-        }
-        
-    elif tool_name == "set_thermostat":
-        temperature = random.randint(5, 35) if should_error else random.randint(18, 25)
-        params = {"temperature": temperature}
-        variations = QUERY_VARIATIONS["set_thermostat"]
-        
-        # Add temperature-specific context
-        context_params = {
-            "temp_feeling": random.choice(["hot", "cold", "warm", "cool"]),
-            "room": random.choice(ROOMS["common"])  # Optional room context
-        }
-        
-    else:  # set_thermostat_delta
-        delta = random.choice([-2, -1.5, -1, 1, 1.5, 2])
-        params = {"delta": delta}
-        variations = QUERY_VARIATIONS["set_thermostat_delta"]["increase" if delta > 0 else "decrease"]
-        
-        # Add temperature-specific context
-        context_params = {
-            "temp_feeling": random.choice(["hot", "cold", "warm", "cool"])
-        }
-
-    # Select query template and format it
-    if tool_name == "set_thermostat_delta":
-        # For thermostat delta, we already selected the appropriate variation list
-        query_template = random.choice(variations)
-    else:
-        # For other tools, select between basic and contextual
-        if random.random() < 0.7:  # 70% basic queries, 30% contextual
-            template_type = "basic"
-        else:
-            template_type = random.choice(["contextual", "time_aware"]) if "time_aware" in variations else "contextual"
-        query_template = random.choice(variations[template_type])
+    def estimate_cost(self) -> float:
+        """Estimate total cost in USD."""
+        cost_per_1k = MODEL_COSTS.get(self.model, MODEL_COSTS[DEFAULT_MODEL])
+        return (self.total_tokens / 1000) * cost_per_1k
     
-    # Only use context parameters that are actually in the template
-    template_params = {k: v for k, v in {**params, **context_params}.items() 
-                      if "{" + k + "}" in query_template}
-    query = query_template.format(**template_params)
+    def get_stats(self) -> Dict[str, Any]:
+        """Get usage statistics."""
+        return {
+            "model": self.model,
+            "total_tokens": self.total_tokens,
+            "total_api_calls": self.total_api_calls,
+            "variations_generated": self.variations_generated,
+            "estimated_cost_usd": round(self.estimate_cost(), 4)
+        }
 
-    # Generate tool response and natural language response
-    tool_response = generate_tool_response(tool_name, params, should_error)
-    natural_response = get_natural_response(tool_name, params, tool_response)
+def preview_variations(
+    messages: List[Dict[str, str]],
+    num_previews: int = 3,
+    model: str = DEFAULT_MODEL
+) -> Tuple[List[str], Dict[str, Any]]:
+    """Preview message variations without generating full dataset.
+    
+    Args:
+        messages: List of messages to generate variations for
+        num_previews: Number of messages to preview
+        model: OpenAI model to use
+        
+    Returns:
+        Tuple of (variations list, cost estimation)
+    """
+    cost_tracker = CostTracker(model)
+    variations = []
+    
+    # Only process a few messages for preview
+    for i, msg in enumerate(messages[:num_previews]):
+        if msg["role"] == "user":
+            try:
+                new_variations = generate_message_variations(
+                    msg["content"],
+                    num_variations=2,  # Generate fewer variations for preview
+                    model=model
+                )
+                variations.extend(new_variations)
+                # Estimate tokens based on input length and variations
+                words = len(msg["content"].split())
+                estimated_tokens = int(words * TOKENS_PER_WORD * 2)  # 2 variations
+                cost_tracker.add_usage(estimated_tokens)
+            except Exception as e:
+                logger.warning(f"Error generating preview variation {i}: {e}")
+    
+    return variations, cost_tracker.get_stats()
 
-    return {
-        "messages": [
-            {
-                "role": "system",
-                "content": generate_system_message()
-            },
-            {
-                "role": "user",
-                "content": query
-            },
-            {
-                "role": "assistant",
-                "content": "",
-                "function_call": format_function_call(tool_name, params)
-            },
-            {
-                "role": "function",
-                "name": tool_name,
-                "content": json.dumps(tool_response, ensure_ascii=False)
-            },
-            {
-                "role": "assistant",
-                "content": natural_response
+def generate_dataset(
+    num_examples: int,
+    output_path: str,
+    use_openai: bool = True,
+    model: str = DEFAULT_MODEL,
+    dry_run: bool = False,
+    cost_tracker: Optional[CostTracker] = None
+) -> Optional[Dict[str, Any]]:
+    """Generate dataset with the specified number of examples.
+    
+    Args:
+        num_examples: Number of examples to generate
+        output_path: Path to save the generated dataset
+        use_openai: Whether to use OpenAI API for generating message variations
+        model: OpenAI model to use
+        dry_run: If True, only preview variations without generating full dataset
+        cost_tracker: Optional cost tracker to update
+        
+    Returns:
+        If dry_run is True, returns dict with preview info and cost estimation
+        Otherwise returns None after saving the dataset
+    """
+    logger.info(f"{'Previewing' if dry_run else 'Generating'} {num_examples} examples...")
+    
+    if dry_run:
+        # Generate a few examples for preview
+        scenario_generator = RealisticScenarioGenerator(use_openai_variations=use_openai, model=model)
+        preview_examples = []
+        for _ in range(min(3, num_examples)):
+            example = scenario_generator.generate()
+            preview_examples.append(example)
+        
+        # Preview variations for these examples
+        all_variations = []
+        for example in preview_examples:
+            variations, stats = preview_variations(
+                example["messages"],
+                num_previews=2,
+                model=model
+            )
+            all_variations.extend(variations)
+        
+        return {
+            "num_examples_previewed": len(preview_examples),
+            "variations_preview": all_variations[:5],  # Show first 5 variations
+            "cost_estimation": {
+                "per_example": stats["estimated_cost_usd"] / len(preview_examples),
+                "total_estimated": stats["estimated_cost_usd"] * (num_examples / len(preview_examples))
             }
-        ]
-    }
-
-def generate_dataset(num_examples: int, output_dir: Path, split_ratio: float = 0.9) -> None:
-    """Generate a dataset with the specified number of examples and distribution."""
+        }
+    
+    # Normal dataset generation
+    if cost_tracker is None:
+        cost_tracker = CostTracker(model)
+        
+    scenario_generator = RealisticScenarioGenerator(
+        use_openai_variations=use_openai,
+        model=model
+    )
     examples = []
-    distribution = {
-        "get_weather": {"total": int(0.3 * num_examples), "error_rate": 0.2},
-        "control_lights": {"total": int(0.3 * num_examples), "error_rate": 0.2},
-        "set_thermostat": {"total": int(0.2 * num_examples), "error_rate": 0.2},
-        "set_thermostat_delta": {"total": int(0.2 * num_examples), "error_rate": 0.2}
-    }
     
-    logger.info(f"Generating {num_examples} examples...")
-    logger.info(f"Output directory: {output_dir}")
-    
-    # Generate examples according to distribution
-    for tool_name, config in distribution.items():
-        total = config["total"]
-        error_count = int(total * config["error_rate"])
-        success_count = total - error_count
+    for i in range(num_examples):
+        example = scenario_generator.generate()
+        examples.append(example)
         
-        logger.info(f"Generating {total} examples for {tool_name} ({error_count} errors)")
-        
-        # Generate success cases
-        for _ in range(success_count):
-            examples.append(generate_single_turn_example(tool_name, should_error=False))
-        
-        # Generate error cases
-        for _ in range(error_count):
-            examples.append(generate_single_turn_example(tool_name, should_error=True))
+        # Update progress every 10 examples
+        if (i + 1) % 10 == 0:
+            stats = cost_tracker.get_stats()
+            logger.info(
+                f"Generated {i + 1}/{num_examples} examples. "
+                f"Estimated cost so far: ${stats['estimated_cost_usd']:.4f}"
+            )
     
-    # Shuffle examples
-    random.shuffle(examples)
-    
-    # Split into train and validation sets
-    split_idx = int(len(examples) * split_ratio)
-    train_examples = examples[:split_idx]
-    val_examples = examples[split_idx:]
-    
-    # Save datasets
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Save the dataset
+    output_dir = Path(output_path).parent
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    train_file = output_dir / f"train_{timestamp}.json"
-    valid_file = output_dir / f"validation_{timestamp}.json"
+    with open(output_path, 'w') as f:
+        json.dump(examples, f, indent=2)
     
-    logger.info(f"Saving training data to {train_file}")
-    with open(train_file, 'w') as f:
-        json.dump({"data": train_examples}, f, indent=2)
-    
-    logger.info(f"Saving validation data to {valid_file}")
-    with open(valid_file, 'w') as f:
-        json.dump({"data": val_examples}, f, indent=2)
-    
-    logger.info(f"Generated {len(train_examples)} training and {len(val_examples)} validation examples")
-    logger.info(f"Files saved in {output_dir}")
+    stats = cost_tracker.get_stats()
+    logger.info(
+        f"Generated {len(examples)} examples and saved to {output_path}\n"
+        f"Final statistics:\n"
+        f"- Total tokens: {stats['total_tokens']:,}\n"
+        f"- Total API calls: {stats['total_api_calls']:,}\n"
+        f"- Total variations: {stats['variations_generated']:,}\n"
+        f"- Total estimated cost: ${stats['estimated_cost_usd']:.4f}"
+    )
+    return None
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate expanded training data for Qwen-style function calling')
-    parser.add_argument('--num-examples', type=int, default=1000,
-                      help='Number of examples to generate')
-    parser.add_argument('--output-dir', type=str, default='generated_qwen_expanded',
-                      help='Output directory for generated data')
-    parser.add_argument('--split-ratio', type=float, default=0.9,
-                      help='Train/validation split ratio')
-    
+    """Main entry point."""
+    parser = argparse.ArgumentParser(description='Generate expanded dataset')
+    parser.add_argument('--num_train', type=int, default=190,
+                       help='Number of training examples')
+    parser.add_argument('--num_valid', type=int, default=20,
+                       help='Number of validation examples')
+    parser.add_argument('--output_dir', type=str, default='data/multi_step',
+                       help='Output directory')
+    parser.add_argument('--use_openai', action='store_true',
+                       help='Use OpenAI API for generating message variations')
+    parser.add_argument('--model', type=str, default=DEFAULT_MODEL,
+                       help=f'OpenAI model to use (default: {DEFAULT_MODEL})')
+    parser.add_argument('--dry_run', action='store_true',
+                       help='Preview variations and estimate costs without generating full dataset')
     args = parser.parse_args()
     
-    # Use relative path from current working directory
-    output_dir = Path(args.output_dir)
+    # Initialize cost tracker
+    cost_tracker = CostTracker(args.model)
     
-    logger.info(f"Output directory: {output_dir}")
+    if args.dry_run:
+        # Preview training data generation
+        logger.info("Previewing training data generation...")
+        preview_info = generate_dataset(
+            args.num_train,
+            os.path.join(args.output_dir, 'train.json'),
+            args.use_openai,
+            model=args.model,
+            dry_run=True
+        )
+        
+        print("\nPreview Results:")
+        print(f"Examples previewed: {preview_info['num_examples_previewed']}")
+        print("\nSample variations:")
+        for i, var in enumerate(preview_info['variations_preview'], 1):
+            print(f"{i}. {var}")
+        
+        print("\nCost Estimation:")
+        print(f"Cost per example: ${preview_info['cost_estimation']['per_example']:.4f}")
+        total_examples = args.num_train + args.num_valid
+        total_cost = preview_info['cost_estimation']['total_estimated']
+        print(f"Total estimated cost for {total_examples} examples: ${total_cost:.4f}")
+        
+        return
     
-    try:
-        generate_dataset(args.num_examples, output_dir, args.split_ratio)
-    except Exception as e:
-        logger.error(f"Error generating dataset: {e}", exc_info=True)
-        raise
+    # Generate training data
+    train_path = os.path.join(args.output_dir, 'train.json')
+    generate_dataset(
+        args.num_train,
+        train_path,
+        args.use_openai,
+        model=args.model,
+        cost_tracker=cost_tracker
+    )
+    print(f'Generated {args.num_train} training examples')
+    
+    # Generate validation data
+    valid_path = os.path.join(args.output_dir, 'valid.json')
+    generate_dataset(
+        args.num_valid,
+        valid_path,
+        args.use_openai,
+        model=args.model,
+        cost_tracker=cost_tracker
+    )
+    print(f'Generated {args.num_valid} validation examples')
+    
+    # Print final statistics
+    final_stats = cost_tracker.get_stats()
+    print("\nFinal Generation Statistics:")
+    print(f"Total tokens used: {final_stats['total_tokens']:,}")
+    print(f"Total API calls: {final_stats['total_api_calls']:,}")
+    print(f"Total variations generated: {final_stats['variations_generated']:,}")
+    print(f"Total estimated cost: ${final_stats['estimated_cost_usd']:.4f}")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main() 

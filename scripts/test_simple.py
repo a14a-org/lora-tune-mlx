@@ -90,9 +90,9 @@ if checkpoint_path.exists():
 else:
     print("No LoRA weights found at", checkpoint_path)
 
-def get_enhanced_system_prompt():
+def get_enhanced_system_prompt(include_zero_shot_tool=False):
     """Get the enhanced system prompt with tool definitions and examples."""
-    return """<|im_start|>system
+    base_prompt = """<|im_start|>system
 You are a powerful agentic AI coding assistant. You help users with coding tasks using the following tools:
 
 <tool_definition name='list_dir'>
@@ -140,46 +140,81 @@ You are a powerful agentic AI coding assistant. You help users with coding tasks
     - Tool calls must use XML-style tags
     - Parameters must be space-separated key=value pairs
     - String values must be quoted
-</tool_definition>
+</tool_definition>"""
 
-Example multi-turn conversations:
+    # Add zero-shot web_request tool if requested
+    if include_zero_shot_tool:
+        base_prompt += """
+
+<tool_definition name='web_request'>
+  description: Makes HTTP requests to retrieve information from the web
+  parameters:
+    - url (string, required): The URL to make the request to
+    - method (string, required): HTTP method (GET, POST, etc.)
+    - headers (string, optional): JSON string of headers to include
+    - data (string, optional): Data to send in the request body
+  format_rules:
+    - Tool calls must use XML-style tags
+    - Parameters must be space-separated key=value pairs
+    - String values must be quoted
+</tool_definition>"""
+
+    # Add examples and closing
+    base_prompt += """
+
+Example conversations:
 
 1. File creation and editing:
 User: Can you create a new Python script that prints "Hello, World!"?
 Assistant: I'll help you create a new Python script.
 <tool name='edit_file'>target_file="hello.py" instructions="Create a new Python script" code_edit="#!/usr/bin/env python3\n\nprint('Hello, World!')"</tool>
-System: <tool_response name='edit_file'>{"status":"success","message":"File created successfully"}</tool_response>
-Assistant: I've created hello.py with a simple Hello World program. Would you like me to run it?
 
-2. File reading and modification:
+2. File reading:
 User: What's in the requirements.txt file?
 Assistant: I'll check the contents of requirements.txt for you.
 <tool name='read_file'>relative_workspace_path="requirements.txt" should_read_entire_file=true start_line_one_indexed=1 end_line_one_indexed_inclusive=100</tool>
-System: <tool_response name='read_file'>{"content":"numpy>=1.24.0\npandas>=2.0.0"}</tool_response>
-Assistant: The requirements.txt file contains two dependencies:
-1. numpy (version >= 1.24.0)
-2. pandas (version >= 2.0.0)
-Would you like me to add any other dependencies?
+
+Remember:
+1. Only use the tools defined above
+2. Always use proper XML-style tags for tool calls
+3. Do not include or simulate system responses
+4. Wait for actual tool responses before proceeding
 <|im_end|>"""
 
+    return base_prompt
+
 # Test prompts
-test_prompts = [
-    get_enhanced_system_prompt() + """<|im_start|>user
+def get_test_prompts(include_zero_shot_tool=False):
+    system_prompt = get_enhanced_system_prompt(include_zero_shot_tool)
+    
+    standard_prompts = [
+        system_prompt + """<|im_start|>user
 Can you check what files are in the current directory?
 <|im_end|>
 <|im_start|>assistant
 """,
-    get_enhanced_system_prompt() + """<|im_start|>user
+        system_prompt + """<|im_start|>user
 Create a new file called test.py with a simple unit test example.
 <|im_end|>
 <|im_start|>assistant
 """,
-    get_enhanced_system_prompt() + """<|im_start|>user
+        system_prompt + """<|im_start|>user
 What's in the requirements.txt file?
 <|im_end|>
 <|im_start|>assistant
 """
-]
+    ]
+    
+    # Add zero-shot tool test if requested
+    if include_zero_shot_tool:
+        zero_shot_prompt = system_prompt + """<|im_start|>user
+Can you check the current weather in San Francisco?
+<|im_end|>
+<|im_start|>assistant
+"""
+        standard_prompts.append(zero_shot_prompt)
+    
+    return standard_prompts
 
 def get_multi_step_prompts():
     """Get prompts for multi-step conversation testing with tool responses."""
@@ -229,7 +264,7 @@ Great! Can you create a basic setup.py file?
 
     return [file_creation_convo, project_setup_convo]
 
-def run_single_step_tests(model, tokenizer):
+def run_single_step_tests(model, tokenizer, include_zero_shot=False):
     """Run the original single-step test cases."""
     print("\nRunning single-step tests:")
     print("=" * 50)
@@ -241,7 +276,12 @@ def run_single_step_tests(model, tokenizer):
                 question = part.split("\n")[1].split("<|im_end|>")[0]
                 break
 
-        print(f"\nTest Case {i + 1}:")
+        # Add special label for zero-shot test
+        test_label = f"Test Case {i + 1}"
+        if include_zero_shot and i == len(test_prompts) - 1:
+            test_label = "Zero-Shot Tool Test"
+
+        print(f"\n{test_label}:")
         print(f"Prompt: {question}")
         print("\nGenerating response...")
         response = generate(model, tokenizer, prompt=prompt, verbose=True)
@@ -379,12 +419,25 @@ Great! Can you create a basic setup.py file?
 
 def main():
     parser = argparse.ArgumentParser(description='Run model inference tests')
-    parser.add_argument('--multi-step-test', action='store_true', help='Run multi-step conversation tests')
-    parser.add_argument('--interactive', action='store_true', help='Run interactive multi-step test')
-    parser.add_argument('--file-creation', action='store_true', help='Run file creation scenario')
-    parser.add_argument('--project-setup', action='store_true', help='Run project setup scenario')
-    parser.add_argument('--failure', action='store_true', help='Include failure responses in scenarios')
+    parser.add_argument('--multi-step-test', action='store_true',
+                      help='Run multi-step conversation tests')
+    parser.add_argument('--interactive', action='store_true',
+                      help='Run interactive multi-step test')
+    parser.add_argument('--file-creation', action='store_true',
+                      help='Run file creation scenario')
+    parser.add_argument('--project-setup', action='store_true',
+                      help='Run project setup scenario')
+    parser.add_argument('--failure', action='store_true',
+                      help='Include failure cases in tests')
+    parser.add_argument('--checkpoint-path', type=str, default='lora_checkpoints/checkpoint-2000.npz',
+                      help='Path to the checkpoint file')
+    parser.add_argument('--zero-shot', action='store_true',
+                      help='Include zero-shot tool test with web_request tool')
     args = parser.parse_args()
+
+    # Update checkpoint path based on argument
+    global checkpoint_path
+    checkpoint_path = Path(args.checkpoint_path)
 
     # Load model and apply LoRA (existing code)
     print("Loading model...")
@@ -463,6 +516,10 @@ def main():
     else:
         print("No LoRA weights found at", checkpoint_path)
 
+    # Get test prompts with or without zero-shot tool
+    global test_prompts
+    test_prompts = get_test_prompts(args.zero_shot)
+
     # Run tests based on command line arguments
     if args.file_creation:
         run_interactive_multi_step_test(model, tokenizer, "file_creation", args.failure)
@@ -474,7 +531,7 @@ def main():
         elif args.multi_step_test:
             run_multi_step_tests(model, tokenizer)
         else:
-            run_single_step_tests(model, tokenizer)
+            run_single_step_tests(model, tokenizer, args.zero_shot)
 
 if __name__ == "__main__":
     main() 
