@@ -1,0 +1,79 @@
+name: Dependabot auto-merge
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      # Auto-merge patch and minor updates
+      - name: Enable auto-merge for patch/minor updates
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Slack notification for minor updates
+      - name: Slack notification for minor update
+        if: steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "📦 *Minor dependency update* in `${{ github.repository }}`",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "📦 *Minor dependency update*
+*Repo:* `${{ github.repository }}`
+*Dependency:* `${{ steps.metadata.outputs.dependency-names }}`
+*Update:* `${{ steps.metadata.outputs.previous-version }}` → `${{ steps.metadata.outputs.new-version }}`
+*PR:* <${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }}>
+
+✅ Auto-merge enabled"
+                  }
+                }
+              ]
+            }
+
+      # Slack notification for major updates (with @channel)
+      - name: Slack notification for major update
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "🚨 Major dependency update needs review in ${{ github.repository }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "<!channel> 🚨 *Major dependency update - manual review required*
+*Repo:* `${{ github.repository }}`
+*Dependency:* `${{ steps.metadata.outputs.dependency-names }}`
+*Update:* `${{ steps.metadata.outputs.previous-version }}` → `${{ steps.metadata.outputs.new-version }}`
+*PR:* <${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }}>
+
+⚠️ This is a major version bump and requires manual review and merge."
+                  }
+                }
+              ]
+            }
