@@ -1,0 +1,40 @@
+# Tooling configuration for the CI quality gate.
+#
+# This project installs its runtime dependencies from requirements.txt (pip).
+# This file only configures the developer/CI tooling (ruff, mypy, pytest) and is
+# intentionally minimal so it does not change how the project is built or run.
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+# The existing ML/training modules predate this CI gate and carry their own
+# (mostly cosmetic) lint debt. Linting is scoped to the files this change owns
+# so the gate is meaningful and green; the legacy modules can be cleaned up
+# incrementally without blocking CI.
+extend-exclude = [
+    ".venv",
+    "models",
+    "utils",
+    "scripts",
+    "data/generate_expanded_dataset.py",
+    "data/preprocess_for_qwen.py",
+]
+
+[tool.ruff.lint]
+# A small, high-signal rule set: pyflakes (F), pycodestyle errors (E),
+# import sorting (I), and a few bug-prone-pattern checks (B).
+select = ["E", "F", "I", "B"]
+
+[tool.mypy]
+python_version = "3.13"
+# Type-check the test suite only. The runtime modules depend on third-party ML
+# libraries that ship without type stubs, so a repo-wide strict pass is out of
+# scope for this change.
+files = ["tests"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
