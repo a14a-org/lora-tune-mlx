@@ -3,11 +3,11 @@ mlx>=0.31.2  # Apple MLX framework
 mlx-lm>=0.31.3  # MLX language models
 transformers>=4.57.6  # For tokenizers and model loading
 huggingface-hub>=0.36.2  # For model downloading
-safetensors>=0.7.0  # For loading model weights
+safetensors>=0.8.0  # For loading model weights
 
 # Data processing
 numpy>=1.26.4
-tqdm>=4.67.3  # For progress bars
+tqdm>=4.68.3  # For progress bars
 
 # Development tools
 pytest>=7.4.4  # For testing
