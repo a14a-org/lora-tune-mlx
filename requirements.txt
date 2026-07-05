@@ -10,7 +10,7 @@ numpy>=1.26.4
 tqdm>=4.68.3  # For progress bars
 
 # Development tools
-pytest>=7.4.4  # For testing
+pytest>=9.1.1  # For testing
 black>=26.5.1  # For code formatting
 isort>=8.0.1  # For import sorting
 mypy>=1.20.2  # For type checking
