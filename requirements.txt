@@ -39,4 +39,4 @@ mkdocs
 mkdocs-material
 
 # Additional dependencies
-openai>=1.109.1 
+openai>=2.44.0 
