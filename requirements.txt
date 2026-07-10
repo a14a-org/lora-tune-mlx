@@ -7,7 +7,7 @@ safetensors>=0.8.0  # For loading model weights
 
 # Data processing
 numpy>=1.26.4
-tqdm>=4.68.3  # For progress bars
+tqdm>=4.68.4  # For progress bars
 
 # Development tools
 pytest>=9.1.1  # For testing
