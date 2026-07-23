@@ -6,7 +6,7 @@ huggingface-hub>=1.24.0  # For model downloading
 safetensors>=0.8.0  # For loading model weights
 
 # Data processing
-numpy>=1.26.4
+numpy>=2.5.1
 tqdm>=4.69.0  # For progress bars
 
 # Development tools
