@@ -12,7 +12,7 @@ tqdm>=4.70.0  # For progress bars
 # Development tools
 pytest>=9.1.1  # For testing
 black>=26.5.1  # For code formatting
-isort>=8.0.1  # For import sorting
+isort>=9.0.1  # For import sorting
 mypy>=2.3.1  # For type checking
 
 # Monitoring
