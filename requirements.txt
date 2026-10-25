@@ -2,7 +2,7 @@
 mlx>=0.32.4  # Apple MLX framework
 mlx-lm>=0.32.2  # MLX language models
 transformers>=5.20.2  # For tokenizers and model loading
-huggingface-hub>=1.33.0  # For model downloading
+huggingface-hub>=2.2.0  # For model downloading
 safetensors>=0.8.0  # For loading model weights
 
 # Data processing
