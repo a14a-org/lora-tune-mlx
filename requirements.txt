@@ -1,12 +1,12 @@
 # Core ML dependencies
 mlx>=0.32.4  # Apple MLX framework
 mlx-lm>=0.32.2  # MLX language models
-transformers>=5.22.2  # For tokenizers and model loading
+transformers>=5.23.0  # For tokenizers and model loading
 huggingface-hub>=2.4.0  # For model downloading
 safetensors>=0.8.0  # For loading model weights
 
 # Data processing
-numpy>=2.5.4
+numpy>=2.5.5
 tqdm>=4.70.1  # For progress bars
 
 # Development tools
@@ -39,4 +39,4 @@ mkdocs
 mkdocs-material
 
 # Additional dependencies
-openai>=3.49.0 
+openai>=3.55.1 
